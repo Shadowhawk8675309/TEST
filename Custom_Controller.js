@@ -1,115 +1,122 @@
 (function (Scratch) {
     'use strict';
 
-    if (!Scratch.extensions.unsandboxed) {
-        throw new Error('This extension must run unsandboxed.');
+    const DPAD_AXIS = 9;
+
+    function getDpadDirection(value) {
+        if (value <= -0.7) return "dpad up";          // -1.0
+        if (value > -0.7 && value <= -0.2) return "dpad right";  // -0.43
+        if (value > -0.2 && value <= 0.4) return "dpad down";    // 0.14
+        if (value > 0.4 && value <= 1.0) return "dpad left";     // 0.71
+        return "neutral";                       // 1.28
     }
 
-    function getPad() {
-        const pads = navigator.getGamepads();
-        return pads[0] || null;
-    }
-
-    const BUTTON_MAP = {
-        "A": 0,
-        "B": 1,
-        "X": 3,
-        "Y": 2,
-        "L": 4,
-        "R": 5,
-        "ZL": 6,
-        "ZR": 7,
-        "Minus": 8,
-        "Plus": 9,
-        "Left Stick": 10,
-        "Right Stick": 11,
-        "Dpad Up": 12,
-        "Dpad Down": 13,
-        "Dpad Left": 14,
-        "Dpad Right": 15,
-        "Home": 16,
-        "Capture": 17
-    };
-
-    class CustomControllerExtension {
+    class AfterglowExtension {
         getInfo() {
             return {
-                id: 'customcontrollerextension',
-                name: 'Custom Controller Extension',
-                color1: '#000000',
-                color2: '#000000',
+                id: 'afterglowcontroller',
+                name: 'Custom Controller',
+                color1: '#1b5a9d',
+                color2: '#FFFFFF',
+                color3: '#887ba3',
                 blocks: [
                     {
-                        opcode: 'stickAxis',
-                        blockType: Scratch.BlockType.REPORTER,
-                        text: 'joystick [STICK] [AXIS] axis',
-                        arguments: {
-                            STICK: { type: Scratch.ArgumentType.STRING, menu: 'stickMenu' },
-                            AXIS: { type: Scratch.ArgumentType.STRING, menu: 'axisMenu' }
-                        }
-                    },
-                    {
-                        opcode: 'buttonPressed',
+                        opcode: 'isInputPressed',
                         blockType: Scratch.BlockType.BOOLEAN,
-                        text: 'button [BTN] pressed',
+                        text: 'IS [INPUT] PRESSED?',
                         arguments: {
-                            BTN: { type: Scratch.ArgumentType.STRING, menu: 'buttonMenu' }
+                            INPUT: {
+                                type: Scratch.ArgumentType.STRING,
+                                menu: 'inputMenu'
+                            }
                         }
                     },
                     {
-                        opcode: 'rawState',
+                        opcode: 'isConnected',
+                        blockType: Scratch.BlockType.BOOLEAN,
+                        text: 'Controller Connected?'
+                    },
+                    {
+                        opcode: 'rawDump',
                         blockType: Scratch.BlockType.REPORTER,
-                        text: 'raw gamepad state (0)'
+                        text: 'Debug Data'
                     }
                 ],
                 menus: {
-                    stickMenu: { items: ['L', 'R'] },
-                    axisMenu: { items: ['X', 'Y'] },
-                    buttonMenu: {
+                    inputMenu: {
+                        acceptReporters: false,
                         items: [
-                            'A', 'B', 'X', 'Y',
-                            'L', 'R', 'ZL', 'ZR',
-                            'Left Stick', 'Right Stick',
-                            'Plus', 'Minus',
-                            'Dpad Up', 'Dpad Down', 'Dpad Left', 'Dpad Right',
-                            'Home', 'Capture'
+                            'A','B','X','Y',
+                            'L','R','ZL','ZR',
+                            '+','-',
+                            'HOME','CAPTURE',
+                            'LS CLICK','RS CLICK',
+                            'DPAD UP','DPAD DOWN','DPAD LEFT','DPAD RIGHT'
                         ]
                     }
                 }
             };
         }
 
-        stickAxis(args) {
-            const pad = getPad();
-            if (!pad) return 0;
+        _pad() {
+            const pads = navigator.getGamepads();
+            return pads[0] || null;
+        }
 
-            let index;
-            if (args.STICK === 'L') {
-                index = (args.AXIS === 'X') ? 0 : 1;
-            } else {
-                index = (args.AXIS === 'X') ? 2 : 3;
+        isConnected() {
+            return this._pad() !== null;
+        }
+
+        isInputPressed(args) {
+            const pad = this._pad();
+            if (!pad) return false;
+
+            const input = args.INPUT.toUpperCase();
+
+            // Button map
+            const buttonMap = {
+                'B': 0,
+                'A': 1,
+                'Y': 2,
+                'X': 3,
+                'L': 4,
+                'R': 5,
+                'ZL': 6,
+                'ZR': 7,
+                '-': 8,
+                '+': 9,
+                'LS CLICK': 10,
+                'RS CLICK': 11,
+                'HOME': 12,
+                'CAPTURE': 13
+            };
+
+            // If it's a button, check button state
+            if (buttonMap[input] !== undefined) {
+                return pad.buttons[buttonMap[input]]?.pressed ?? false;
             }
 
-            const value = pad.axes[index] || 0;
-            return value;
+            // Otherwise it's a DPAD direction
+            const value = pad.axes[DPAD_AXIS];
+            const dir = getDpadDirection(value);
+
+            return dir === input.toLowerCase();
         }
 
-        buttonPressed(args) {
-            const pad = getPad();
-            if (!pad) return false;
-            const index = BUTTON_MAP[args.BTN];
-            return pad.buttons[index]?.pressed || false;
-        }
+        rawDump() {
+            const pad = this._pad();
+            if (!pad) return "no controller";
 
-        rawState() {
-            const pad = getPad();
-            if (!pad) return "{}";
+            const axes = pad.axes?.map(v => Number(v.toFixed(3))) || [];
+            const buttons = pad.buttons?.map(b => b.value) || [];
+
             return JSON.stringify({
-                buttons: pad.buttons.map(b => b.value),
-                axes: pad.axes
+                id: pad.id,
+                axes: axes,
+                buttons: buttons
             });
         }
     }
 
-    Scratch.extensions.register(new CustomControllerExtension());
+    Scratch.extensions.register(new AfterglowExtension());
 })(Scratch);
